@@ -81,23 +81,23 @@ export class ShortcutsHelper {
     })
 
     // New shortcuts for moving the window
-    globalShortcut.register("CommandOrControl+Left", () => {
-      console.log("Command/Ctrl + Left pressed. Moving window left.")
+    globalShortcut.register("CommandOrControl+Option+Left", () => {
+      console.log("Command/Ctrl + Option + Left pressed. Moving window left.")
       this.deps.moveWindowLeft()
     })
 
-    globalShortcut.register("CommandOrControl+Right", () => {
-      console.log("Command/Ctrl + Right pressed. Moving window right.")
+    globalShortcut.register("CommandOrControl+Option+Right", () => {
+      console.log("Command/Ctrl + Option +  Right pressed. Moving window right.")
       this.deps.moveWindowRight()
     })
 
-    globalShortcut.register("CommandOrControl+Down", () => {
-      console.log("Command/Ctrl + down pressed. Moving window down.")
+    globalShortcut.register("CommandOrControl+Option+Down", () => {
+      console.log("Command/Ctrl + Option +  down pressed. Moving window down.")
       this.deps.moveWindowDown()
     })
 
-    globalShortcut.register("CommandOrControl+Up", () => {
-      console.log("Command/Ctrl + Up pressed. Moving window Up.")
+    globalShortcut.register("CommandOrControl+Option+Up", () => {
+      console.log("Command/Ctrl + Option +  Up pressed. Moving window Up.")
       this.deps.moveWindowUp()
     })
 
