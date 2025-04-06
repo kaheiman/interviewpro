@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react"
 
 import { useToast } from "../../contexts/toast"
 import { LanguageSelector } from "../shared/LanguageSelector"
+import { InterviewModeSelector } from "../shared/InterviewModeSelector"
 import { COMMAND_KEY } from "../../utils/platform"
 
 interface QueueCommandsProps {
@@ -10,6 +11,8 @@ interface QueueCommandsProps {
   credits: number
   currentLanguage: string
   setLanguage: (language: string) => void
+  currentInterviewMode: string
+  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
 }
 
 const QueueCommands: React.FC<QueueCommandsProps> = ({
@@ -17,7 +20,9 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   screenshotCount = 0,
   credits,
   currentLanguage,
-  setLanguage
+  setLanguage,
+  currentInterviewMode,
+  setInterviewMode,
 }) => {
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const tooltipRef = useRef<HTMLDivElement>(null)
@@ -383,6 +388,11 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                         currentLanguage={currentLanguage}
                         setLanguage={setLanguage}
                       />
+
+                      <InterviewModeSelector
+                        currentInterviewMode={currentInterviewMode}
+                        setInterviewMode={setInterviewMode}
+                      />                      
 
                       {/* API Key Settings */}
                       <div className="mb-3 px-2 space-y-1">

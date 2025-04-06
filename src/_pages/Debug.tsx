@@ -74,12 +74,16 @@ interface DebugProps {
   setIsProcessing: (isProcessing: boolean) => void
   currentLanguage: string
   setLanguage: (language: string) => void
+  currentInterviewMode: string
+  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
 }
 
 const Debug: React.FC<DebugProps> = ({
   isProcessing,
   setIsProcessing,
   currentLanguage,
+  currentInterviewMode,
+  setInterviewMode,
   setLanguage
 }) => {
   const [tooltipVisible, setTooltipVisible] = useState(false)

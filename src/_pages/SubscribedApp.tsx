@@ -8,16 +8,20 @@ import { useToast } from "../contexts/toast"
 interface SubscribedAppProps {
   credits: number
   currentLanguage: string
-  setLanguage: (language: string) => void
+  setLanguage: (newLanguage: string) => void
+  currentInterviewMode: string
+  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
 }
 
 const SubscribedApp: React.FC<SubscribedAppProps> = ({
   credits,
   currentLanguage,
-  setLanguage
+  setLanguage,
+  currentInterviewMode,
+  setInterviewMode
 }) => {
   const queryClient = useQueryClient()
-  const [view, setView] = useState<"queue" | "solutions" | "debug">("queue")
+  const [view, setView] = useState<"queue" | "solutions" | "debug">("solutions")
   const containerRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
 
@@ -44,14 +48,17 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
     }
   }, [])
 
-  // Dynamically update the window size
+  // // Dynamically update the window size
   useEffect(() => {
     if (!containerRef.current) return
 
     const updateDimensions = () => {
       if (!containerRef.current) return
       const height = containerRef.current.scrollHeight || 600
-      const width = containerRef.current.scrollWidth || 800
+      let width = containerRef.current.scrollWidth || 800
+      if (currentInterviewMode === "SystemDesign") {
+        width = 1400
+      }
       window.electronAPI?.updateContentDimensions({ width, height })
     }
 
@@ -60,7 +67,11 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
     
     // Set a fallback timer to ensure dimensions are set even if content isn't fully loaded
     const fallbackTimer = setTimeout(() => {
-      window.electronAPI?.updateContentDimensions({ width: 800, height: 600 })
+      let width = 800
+      if (currentInterviewMode === "SystemDesign") {
+        width = 1400
+      }      
+      window.electronAPI?.updateContentDimensions({ width, height: 600 })
     }, 500)
 
     const resizeObserver = new ResizeObserver(updateDimensions)
@@ -84,7 +95,7 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
       clearTimeout(fallbackTimer)
       clearTimeout(delayedUpdate)
     }
-  }, [view])
+  }, [view, currentInterviewMode])
 
   // Listen for events that might switch views or show errors
   useEffect(() => {
@@ -142,6 +153,8 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
           credits={credits}
           currentLanguage={currentLanguage}
           setLanguage={setLanguage}
+          currentInterviewMode={currentInterviewMode}
+          setInterviewMode={setInterviewMode}         
         />
       ) : view === "solutions" ? (
         <Solutions
@@ -149,6 +162,8 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
           credits={credits}
           currentLanguage={currentLanguage}
           setLanguage={setLanguage}
+          currentInterviewMode={currentInterviewMode}
+          setInterviewMode={setInterviewMode}
         />
       ) : null}
     </div>

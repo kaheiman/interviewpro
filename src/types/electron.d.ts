@@ -79,5 +79,6 @@ declare global {
     __LANGUAGE__: string
     __IS_INITIALIZED__: boolean
     __AUTH_TOKEN__?: string | null
+    __INTERVIEW_MODE__ : string
   }
 }

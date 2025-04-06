@@ -154,6 +154,9 @@ function initializeHelpers() {
   } as IShortcutsHelperDeps)
 }
 
+
+app.disableHardwareAcceleration
+
 // Auth callback handler
 
 // Register the interview-coder protocol
@@ -207,7 +210,7 @@ async function createWindow(): Promise<void> {
   state.currentY = 50
 
   const windowSettings: Electron.BrowserWindowConstructorOptions = {
-    width: 800,
+    width: 1400,
     height: 600,
     minWidth: 750,
     minHeight: 550,
@@ -469,11 +472,10 @@ function setWindowDimensions(width: number, height: number): void {
     const primaryDisplay = screen.getPrimaryDisplay()
     const workArea = primaryDisplay.workAreaSize
     const maxWidth = Math.floor(workArea.width * 0.5)
-
     state.mainWindow.setBounds({
       x: Math.min(currentX, workArea.width - maxWidth),
       y: currentY,
-      width: Math.min(width + 32, maxWidth),
+      width: (width === 1400) ? width : Math.min(width + 32, maxWidth), // System Design Mode
       height: Math.ceil(height)
     })
   }

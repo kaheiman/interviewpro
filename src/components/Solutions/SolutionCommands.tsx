@@ -4,6 +4,7 @@ import { Screenshot } from "../../types/screenshots"
 import { supabase } from "../../lib/supabase"
 import { LanguageSelector } from "../shared/LanguageSelector"
 import { COMMAND_KEY } from "../../utils/platform"
+import { InterviewModeSelector } from "../shared/InterviewModeSelector"
 
 export interface SolutionCommandsProps {
   onTooltipVisibilityChange: (visible: boolean, height: number) => void
@@ -13,6 +14,8 @@ export interface SolutionCommandsProps {
   credits: number
   currentLanguage: string
   setLanguage: (language: string) => void
+  currentInterviewMode: string
+  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
 }
 
 const handleSignOut = async () => {
@@ -35,7 +38,9 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
   extraScreenshots = [],
   credits,
   currentLanguage,
-  setLanguage
+  setLanguage,
+  currentInterviewMode,
+  setInterviewMode
 }) => {
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
   const tooltipRef = useRef<HTMLDivElement>(null)
@@ -414,6 +419,11 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                       <LanguageSelector
                         currentLanguage={currentLanguage}
                         setLanguage={setLanguage}
+                      />
+
+                      <InterviewModeSelector
+                        currentInterviewMode={currentInterviewMode}
+                        setInterviewMode={setInterviewMode}
                       />
 
                       {/* API Key Settings */}

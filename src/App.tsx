@@ -47,6 +47,7 @@ function App() {
   // Note: Model selection is now handled via separate extraction/solution/debugging model settings
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [currentInterviewMode, setInterviewMode] = useState<string>("SystemDesign") // Coding | SystemDesign
 
   // Set unlimited credits
   const updateCredits = useCallback(() => {
@@ -239,7 +240,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <ToastContext.Provider value={{ showToast }}>
+        <ToastContext.Provider value={{ showToast }}>        
           <div className="relative">
             {isInitialized ? (
               hasApiKey ? (
@@ -247,6 +248,8 @@ function App() {
                   credits={credits}
                   currentLanguage={currentLanguage}
                   setLanguage={updateLanguage}
+                  currentInterviewMode={currentInterviewMode}
+                  setInterviewMode={setInterviewMode}
                 />
               ) : (
                 <WelcomeScreen onOpenSettings={handleOpenSettings} />

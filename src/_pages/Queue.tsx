@@ -21,13 +21,17 @@ interface QueueProps {
   credits: number
   currentLanguage: string
   setLanguage: (language: string) => void
+  currentInterviewMode: string
+  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
 }
 
 const Queue: React.FC<QueueProps> = ({
   setView,
   credits,
   currentLanguage,
-  setLanguage
+  setLanguage,
+  currentInterviewMode,
+  setInterviewMode
 }) => {
   const { showToast } = useToast()
 
@@ -151,6 +155,8 @@ const Queue: React.FC<QueueProps> = ({
             screenshotCount={screenshots.length}
             credits={credits}
             currentLanguage={currentLanguage}
+            currentInterviewMode={currentInterviewMode}
+            setInterviewMode={setInterviewMode}
             setLanguage={setLanguage}
           />
         </div>

@@ -13,6 +13,7 @@ interface Config {
   debuggingModel: string;
   language: string;
   opacity: number;
+  interviewMode: string;
 }
 
 export class ConfigHelper extends EventEmitter {
@@ -24,6 +25,7 @@ export class ConfigHelper extends EventEmitter {
     solutionModel: "gemini-2.0-flash",
     debuggingModel: "gemini-2.0-flash",
     language: "python",
+    interviewMode: "Coding",
     opacity: 1.0
   };
 
@@ -185,6 +187,7 @@ export class ConfigHelper extends EventEmitter {
       // Only emit update event for changes other than opacity
       // This prevents re-initializing the AI client when only opacity changes
       if (updates.apiKey !== undefined || updates.apiProvider !== undefined || 
+          updates.interviewMode !== undefined ||
           updates.extractionModel !== undefined || updates.solutionModel !== undefined || 
           updates.debuggingModel !== undefined || updates.language !== undefined) {
         this.emit('config-updated', newConfig);
