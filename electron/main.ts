@@ -14,6 +14,7 @@ const isDev = process.env.NODE_ENV === "development"
 
 // Application State
 const state = {
+  mode: "Coding" as "Coding" | "SystemDesign",
   // Window management properties
   mainWindow: null as BrowserWindow | null,
   isWindowVisible: false,
@@ -85,6 +86,7 @@ export interface IShortcutsHelperDeps {
   moveWindowRight: () => void
   moveWindowUp: () => void
   moveWindowDown: () => void
+  switchMode: () => void
 }
 
 export interface IIpcHandlerDeps {
@@ -107,6 +109,7 @@ export interface IIpcHandlerDeps {
   moveWindowRight: () => void
   moveWindowUp: () => void
   moveWindowDown: () => void
+  switchMode: () => void
 }
 
 // Initialize helpers
@@ -150,7 +153,11 @@ function initializeHelpers() {
         )
       ),
     moveWindowUp: () => moveWindowVertical((y) => y - state.step),
-    moveWindowDown: () => moveWindowVertical((y) => y + state.step)
+    moveWindowDown: () => moveWindowVertical((y) => y + state.step),
+    switchMode: () => {
+      state.mode = state.mode === "Coding" ? "SystemDesign" : "Coding"
+      state.mainWindow?.webContents.send("switch-mode", state.mode)
+    }
   } as IShortcutsHelperDeps)
 }
 
@@ -539,6 +546,10 @@ async function initializeApp() {
       toggleMainWindow,
       clearQueues,
       setView,
+      switchMode: () => {
+        state.mode = state.mode === "Coding" ? "SystemDesign" : "Coding"
+        state.mainWindow?.webContents.send("switch-mode", state.mode)
+      },
       moveWindowLeft: () =>
         moveWindowHorizontal((x) =>
           Math.max(-(state.windowSize?.width || 0) / 2, x - state.step)
@@ -611,11 +622,20 @@ function getMainWindow(): BrowserWindow | null {
   return state.mainWindow
 }
 
+function getInterviewMode(): "Coding" | "SystemDesign" {
+  return state.mode
+}
+
+function setInterviewMode(mode: "Coding" | "SystemDesign"): void {
+  state.mode = mode
+}
+
 function getView(): "queue" | "solutions" | "debug" {
   return state.view
 }
 
 function setView(view: "queue" | "solutions" | "debug"): void {
+  console.log('@ inside set view', view)
   state.view = view
   state.screenshotHelper?.setView(view)
 }

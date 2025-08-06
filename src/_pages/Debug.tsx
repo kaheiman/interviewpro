@@ -75,7 +75,7 @@ interface DebugProps {
   currentLanguage: string
   setLanguage: (language: string) => void
   currentInterviewMode: string
-  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
+  setInterviewMode: (newMode: string) => void
 }
 
 const Debug: React.FC<DebugProps> = ({

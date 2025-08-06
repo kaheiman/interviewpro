@@ -12,7 +12,7 @@ interface QueueCommandsProps {
   currentLanguage: string
   setLanguage: (language: string) => void
   currentInterviewMode: string
-  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
+  setInterviewMode: (newMode: string) => void
 }
 
 const QueueCommands: React.FC<QueueCommandsProps> = ({

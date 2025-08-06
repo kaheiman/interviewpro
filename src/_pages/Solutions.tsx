@@ -25,192 +25,6 @@ import { COMMAND_KEY } from "../utils/platform"
 
 const TABS = ['Description', 'Requirements', 'Diagram', 'Database Schema', 'Tradeoff'];
 
-const systemDesignSoltionData = {
-  "description": "A VirusTotal-like system is a multi-engine file and URL analysis platform that scans uploaded content using a wide array of antivirus engines, static and dynamic analyzers, and reputation databases to detect malicious behavior. Users can submit binaries, documents, archives, or URLs and get back aggregated scan results, metadata, and threat intelligence insights.",
-  "clarifications": [
-    {
-      "questions": "Do we need to support both file and URL submissions, or just one to start with?",
-      "reason": "Impacts the design of the ingestion and normalization layer and how analyzers are invoked."
-    },
-    {
-      "questions": "Are scan results expected to be real-time or can they be delayed (e.g., async responses)?",
-      "reason": "Affects the architecture choice between synchronous APIs vs job queues and polling."
-    },
-    {
-      "questions": "Will we allow public querying of historical scans, and if so, with what retention period?",
-      "reason": "Determines storage retention policies and access control mechanisms."
-    },
-    {
-      "questions": "Should we integrate with external AV vendors and sandbox providers, or only use internal engines?",
-      "reason": "Changes the scope of orchestration, network access requirements, and pricing model."
-    }
-  ],
-  "functional_requirements": [
-    {
-      "api_interface": {
-        "POST /submit": {
-          "request": {
-            "headers": { "Authorization": "Bearer <token>" },
-            "body": {
-              "type": "file | url",
-              "value": "base64 string or url",
-              "user_id": "string"
-            }
-          },
-          "response": {
-            "submission_id": "uuid",
-            "status": "queued | completed | error"
-          }
-        }
-      },
-      "workflow": "Users upload a file or submit a URL to be analyzed. The system stores it, deduplicates via hash, and enqueues it for multi-engine scanning.",
-      "use_case": "Submit content for malware scanning and behavioral analysis."
-    },
-    {
-      "api_interface": {
-        "GET /result/:submission_id": {
-          "request": { "params": { "submission_id": "uuid" } },
-          "response": {
-            "submission_id": "uuid",
-            "status": "completed | queued | failed",
-            "scan_summary": {
-              "positives": "number",
-              "total_engines": "number"
-            },
-            "engine_results": {
-              "engine_name": {
-                "result": "clean | malicious | suspicious",
-                "category": "AV | static | dynamic",
-                "details": "string"
-              }
-            }
-          }
-        }
-      },
-      "workflow": "Clients poll or query scan results by submission ID, getting both summary and per-engine responses.",
-      "use_case": "Retrieve aggregated scan results for a previously submitted file or URL."
-    },
-    {
-      "api_interface": {
-        "GET /search?q=:hash": {
-          "request": {
-            "query": {
-              "q": "md5 | sha1 | sha256"
-            }
-          },
-          "response": {
-            "found": "boolean",
-            "submission_id": "uuid",
-            "created_at": "timestamp",
-            "scan_summary": "object"
-          }
-        }
-      },
-      "workflow": "Checks if the system has already scanned the content before based on the hash.",
-      "use_case": "De-duplicate submissions and return cached results to reduce compute."
-    }
-  ],
-  "non_functional_requirements": {
-    "traffic": "10K submissions/day, 100K API reads/day, spikes during malware campaigns or coordinated threat scans.",
-    "storage": "Files up to 100MB each, with 1-year retention. Estimated 10TB/year raw files, 1TB metadata.",
-    "latency": "File upload to scan result within 15 seconds (P95). Result fetch latency < 300ms.",
-    "optimization_in_quality": "Optimize for accuracy and scan breadth (number of engines) with reasonable latency. Tradeoff: asynchronous model to support slower engines and sandboxing."
-  },
-  "component_dive_deep": [
-    {
-      "alternative": "S3 for cold storage vs EFS or MinIO",
-      "reason": "S3 is cost-effective and scalable for storing binaries and results.",
-      "tradeoff": "Higher latency for read-access vs faster but costlier EFS.",
-      "component": "File Storage"
-    },
-    {
-      "alternative": "Redis vs PostgreSQL for job tracking",
-      "reason": "Redis supports fast polling and pub/sub for async job status.",
-      "tradeoff": "Redis is in-memory, so less durable; PostgreSQL is reliable but higher read latency.",
-      "component": "Scan Job Queue Status Store"
-    },
-    {
-      "alternative": "Event-driven processing (Kafka + workers) vs direct API-triggered fan-out",
-      "reason": "Kafka enables reliable fan-out to multiple AV engines and retries.",
-      "tradeoff": "Adds operational complexity vs simpler sync model with worse scalability.",
-      "component": "Scan Orchestrator"
-    }
-  ],
-  "open_questions": "Should scan results be publicly viewable or strictly private per user? This affects privacy guarantees, result caching, and query exposure model.",
-  "nodes": [
-    { "id": "1", "data": { "label": "API Gateway" }, "position": { "x": 0, "y": 0 } },
-    { "id": "2", "data": { "label": "Upload Service" }, "position": { "x": 200, "y": 0 } },
-    { "id": "3", "data": { "label": "File Storage (S3)" }, "position": { "x": 400, "y": -100 } },
-    { "id": "4", "data": { "label": "Submission Metadata DB" }, "position": { "x": 400, "y": 100 } },
-    { "id": "5", "data": { "label": "Scan Orchestrator" }, "position": { "x": 600, "y": 0 } },
-    { "id": "6", "data": { "label": "Engine A (AV)" }, "position": { "x": 800, "y": -150 } },
-    { "id": "7", "data": { "label": "Engine B (Static)" }, "position": { "x": 800, "y": 0 } },
-    { "id": "8", "data": { "label": "Engine C (Sandbox)" }, "position": { "x": 800, "y": 150 } },
-    { "id": "9", "data": { "label": "Result Aggregator" }, "position": { "x": 1000, "y": 0 } },
-    { "id": "10", "data": { "label": "Scan Result DB" }, "position": { "x": 1200, "y": 0 } },
-    { "id": "11", "data": { "label": "Search & Query API" }, "position": { "x": 1400, "y": 0 } }
-  ],
-  "edges": [
-    { "id": "e1-2", "source": "1", "target": "2", "label": "Submit file or URL" },
-    { "id": "e2-3", "source": "2", "target": "3", "label": "Store binary" },
-    { "id": "e2-4", "source": "2", "target": "4", "label": "Save metadata" },
-    { "id": "e4-5", "source": "4", "target": "5", "label": "Queue scan job" },
-    { "id": "e5-6", "source": "5", "target": "6", "label": "Dispatch to AV engine" },
-    { "id": "e5-7", "source": "5", "target": "7", "label": "Dispatch to static engine" },
-    { "id": "e5-8", "source": "5", "target": "8", "label": "Dispatch to sandbox engine" },
-    { "id": "e6-9", "source": "6", "target": "9", "label": "Return scan result" },
-    { "id": "e7-9", "source": "7", "target": "9", "label": "Return scan result" },
-    { "id": "e8-9", "source": "8", "target": "9", "label": "Return scan result" },
-    { "id": "e9-10", "source": "9", "target": "10", "label": "Persist aggregated result" },
-    { "id": "e10-11", "source": "10", "target": "11", "label": "Serve query" }
-  ],
-  "steps_walkthrough": [
-    "1 → 2: User submits file or URL through the API Gateway to the Upload Service.",
-    "2 → 3: The file is stored in a cold storage like S3.",
-    "2 → 4: Submission metadata (hash, timestamp, user, type) is stored.",
-    "4 → 5: The orchestrator is notified to start the scan pipeline.",
-    "5 → 6/7/8: Orchestrator dispatches scanning jobs to various engines.",
-    "6/7/8 → 9: Each engine completes the scan and returns its result to the aggregator.",
-    "9 → 10: Aggregated scan result is persisted in the result database.",
-    "10 → 11: Users or analysts can query results via the public search API."
-  ],
-  "database_schema": [
-    {
-      "table": "submissions",
-      "columns": {
-        "id": "uuid - unique identifier for each submission",
-        "user_id": "string - ID of the user who submitted",
-        "type": "string - file or url",
-        "original_value": "string - base64 file reference or raw URL",
-        "hash": "string - sha256 of the file or normalized URL",
-        "status": "string - queued, scanning, completed",
-        "created_at": "timestamp - submission time"
-      },
-      "constraints": [
-        "PRIMARY KEY (id)",
-        "UNIQUE (hash)",
-        "INDEX (user_id)"
-      ]
-    },
-    {
-      "table": "scan_results",
-      "columns": {
-        "id": "uuid - reference to submission",
-        "engine_name": "string - name of the engine used",
-        "result": "string - clean, malicious, suspicious",
-        "category": "string - static, dynamic, AV",
-        "details": "text - JSON blob with scan metadata",
-        "completed_at": "timestamp - when scan finished"
-      },
-      "constraints": [
-        "PRIMARY KEY (id, engine_name)",
-        "INDEX (engine_name, result)"
-      ]
-    }
-  ]
-}
-
-
 interface Clarification {
   questions: string;
   reason: string;
@@ -234,7 +48,7 @@ const RequirementsSection = ({
   nonFunctionalRequirements
 }: {
   functionalRequirements: FunctionalRequirement[];
-  nonFunctionalRequirements: NonFunctionalRequirements;
+  nonFunctionalRequirements: NonFunctionalRequirements | null;
 }) => {
   return (
     <div className="w-full flex text-gray-100 space-x-12 rounded-2xl shadow-xl cursor-default">
@@ -262,19 +76,19 @@ const RequirementsSection = ({
         <ul className="space-y-4 text-sm text-gray-200">
           <li>
             <span className="font-semibold text-white">Traffic:</span>{" "}
-            {nonFunctionalRequirements.traffic}
+            {nonFunctionalRequirements?.traffic || ""}
           </li>
           <li>
             <span className="font-semibold text-white">Storage:</span>{" "}
-            {nonFunctionalRequirements.storage}
+            {nonFunctionalRequirements?.storage || ""}
           </li>
           <li>
             <span className="font-semibold text-white">Latency:</span>{" "}
-            {nonFunctionalRequirements.latency}
+            {nonFunctionalRequirements?.latency || ""}
           </li>
           <li>
             <span className="font-semibold text-white">Optimization in Quality:</span>{" "}
-            {nonFunctionalRequirements.optimization_in_quality}
+            {nonFunctionalRequirements?.optimization_in_quality || ""}
           </li>
         </ul>
       </section>
@@ -485,6 +299,12 @@ const getLayoutedElements = (
 ): { nodes: Node[]; edges: Edge[] } => {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+  console.log('nodes:', nodes)
+  console.log('edges:', edges)
+  if (!nodes || ! edges) {
+    return { nodes: [], edges: [] };
+  }
 
   const isHorizontal = direction === 'LR' || direction === 'RL';
 
@@ -708,7 +528,7 @@ export interface SolutionsProps {
   currentLanguage: string
   setLanguage: (language: string) => void
   currentInterviewMode: string
-  setInterviewMode: React.Dispatch<React.SetStateAction<string>>  
+  setInterviewMode: (newMode: string) => void  
 }
 const Solutions: React.FC<SolutionsProps> = ({
   setView,
@@ -721,14 +541,27 @@ const Solutions: React.FC<SolutionsProps> = ({
   const queryClient = useQueryClient()
   const contentRef = useRef<HTMLDivElement>(null)
 
+
+  const [description, setDescription] = useState<string | null>(null)
+  const [functionalRequirements, setFunctionalRequirements] = useState<FunctionalRequirement[] | null>(null)
+  const [nonFunctionalRequirements, setNonFunctionalRequirements] = useState<NonFunctionalRequirements | null>(null)
+  const [databaseSchema, setDatabaseSchema] = useState<TableSchema[] | null>(null)
+  const [tradeOffs, setTradeOffs] = useState<TradeOffItem[] | null>(null)
+  const [clarifications, setClarifications] = useState<Clarification[] | null>(null)
+  const [stepsWalkthrough, setStepsWalkthrough] = useState<string[] | null>(null)
+  const [diagramNodes, setDiagramNodes] = useState<Node[]>([])
+  const [diagramEdges, setDiagramEdges] = useState<Edge[]>([])
+
+
   const [debugProcessing, setDebugProcessing] = useState(false)
   const [problemStatementData, setProblemStatementData] =
     useState<ProblemStatementData | null>(null)
 
-  const { nodes, edges } = useMemo(() => getLayoutedElements(systemDesignSoltionData.nodes, systemDesignSoltionData.edges), []);
+  const { nodes, edges } = useMemo(() => getLayoutedElements(diagramNodes, diagramEdges), [diagramNodes, diagramEdges]);
   const [activeSystemDesignSolutionTab, setActiveSystemDesignSolutionTab] = useState('Diagram');
 
   const [solutionData, setSolutionData] = useState<string | null>(null)
+  const [systemDesignSoltionData, setSystemDesignSolutionData] = useState<string | null>(null)
   const [thoughtsData, setThoughtsData] = useState<string[] | null>(null)
   const [timeComplexityData, setTimeComplexityData] = useState<string | null>(
     null
@@ -755,7 +588,6 @@ const Solutions: React.FC<SolutionsProps> = ({
     const fetchScreenshots = async () => {
       try {
         const existing = await window.electronAPI.getScreenshots()
-        console.log("Raw screenshot data:", existing)
         const screenshots = (Array.isArray(existing) ? existing : []).map(
           (p) => ({
             id: p.path,
@@ -764,7 +596,6 @@ const Solutions: React.FC<SolutionsProps> = ({
             timestamp: Date.now()
           })
         )
-        console.log("Processed screenshots:", screenshots)
         setExtraScreenshots(screenshots)
       } catch (error) {
         console.error("Error loading extra screenshots:", error)
@@ -844,6 +675,18 @@ const Solutions: React.FC<SolutionsProps> = ({
         setThoughtsData(null)
         setTimeComplexityData(null)
         setSpaceComplexityData(null)
+
+        // System design specific reset
+        setSystemDesignSolutionData(null)
+        setDescription(null)
+        setFunctionalRequirements(null)
+        setNonFunctionalRequirements(null)
+        setDatabaseSchema(null)
+        setTradeOffs(null)
+        setStepsWalkthrough(null)
+        setDiagramNodes([])
+        setDiagramEdges([])
+        setClarifications(null)
       }),
       window.electronAPI.onProblemExtracted((data) => {
         queryClient.setQueryData(["problem_statement"], data)
@@ -852,20 +695,54 @@ const Solutions: React.FC<SolutionsProps> = ({
       window.electronAPI.onSolutionError((error: string) => {
         showToast("Processing Failed", error, "error")
         // Reset solutions in the cache (even though this shouldn't ever happen) and complexities to previous states
-        const solution = queryClient.getQueryData(["solution"]) as {
-          code: string
-          thoughts: string[]
-          time_complexity: string
-          space_complexity: string
-        } | null
-        if (!solution) {
-          setView("queue")
+        if (currentInterviewMode === "Coding") {
+          const solution = queryClient.getQueryData(["solution"]) as {
+            code: string
+            thoughts: string[]
+            time_complexity: string
+            space_complexity: string
+          } | null
+          if (!solution) {
+            setView("queue")
+          }
+          setSolutionData(solution?.code || null)
+          setThoughtsData(solution?.thoughts || null)
+          setTimeComplexityData(solution?.time_complexity || null)
+          setSpaceComplexityData(solution?.space_complexity || null)
+          console.error("Processing error:", error)
         }
-        setSolutionData(solution?.code || null)
-        setThoughtsData(solution?.thoughts || null)
-        setTimeComplexityData(solution?.time_complexity || null)
-        setSpaceComplexityData(solution?.space_complexity || null)
-        console.error("Processing error:", error)
+        if (currentInterviewMode === "SystemDesign") {
+          const systemDesignSolution = queryClient.getQueryData(["system_design_solution"]) as {
+            description: string
+            functional_requirements: FunctionalRequirement[]
+            non_functional_requirements: NonFunctionalRequirements
+            database_schema: TableSchema[]
+            component_dive_deep: TradeOffItem[]
+            steps_walkthrough: string[]
+            diagram_nodes: Node[]
+            diagram_edges: Edge[]
+            clarifications: Clarification[]
+          } | null
+          console.log('systemDesignSolution cahce:', systemDesignSolution)
+          if (!systemDesignSoltionData) {
+            setView("queue")
+          }
+          setSystemDesignSolutionData(null)
+          if (systemDesignSolution) {
+            setSystemDesignSolutionData(systemDesignSolution.description)
+            setDescription(systemDesignSolution.description)
+            setFunctionalRequirements(systemDesignSolution.functional_requirements)
+            setNonFunctionalRequirements(systemDesignSolution.non_functional_requirements)
+            setDatabaseSchema(systemDesignSolution.database_schema)
+            setTradeOffs(systemDesignSolution.component_dive_deep)
+            setStepsWalkthrough(systemDesignSolution.steps_walkthrough)
+            setClarifications(systemDesignSolution.clarifications)
+            setDiagramNodes(systemDesignSolution.diagram_nodes)
+            setDiagramEdges(systemDesignSolution.diagram_edges)
+          } else {
+            console.warn("Received empty or invalid system design solution data")
+          }          
+        }
       }),
       //when the initial solution is generated, we'll set the solution data to that
       window.electronAPI.onSolutionSuccess((data) => {
@@ -873,19 +750,47 @@ const Solutions: React.FC<SolutionsProps> = ({
           console.warn("Received empty or invalid solution data")
           return
         }
-        console.log({ data })
-        const solutionData = {
-          code: data.code,
-          thoughts: data.thoughts,
-          time_complexity: data.time_complexity,
-          space_complexity: data.space_complexity
+        console.log('Received solution data: ', data)
+        if (currentInterviewMode === "Coding") {
+          const solutionData = {
+            code: data.code,
+            thoughts: data.thoughts,
+            time_complexity: data.time_complexity,
+            space_complexity: data.space_complexity
+          }
+  
+          queryClient.setQueryData(["solution"], solutionData)
+          setSolutionData(solutionData.code || null)
+          setThoughtsData(solutionData.thoughts || null)
+          setTimeComplexityData(solutionData.time_complexity || null)
+          setSpaceComplexityData(solutionData.space_complexity || null)
         }
 
-        queryClient.setQueryData(["solution"], solutionData)
-        setSolutionData(solutionData.code || null)
-        setThoughtsData(solutionData.thoughts || null)
-        setTimeComplexityData(solutionData.time_complexity || null)
-        setSpaceComplexityData(solutionData.space_complexity || null)
+        if (currentInterviewMode === "SystemDesign") {
+          const systemDesignSolution = {
+            description: data.description,
+            functional_requirements: data.functional_requirements,
+            non_functional_requirements: data.non_functional_requirements,
+            database_schema: data.database_schema,
+            component_dive_deep: data.component_dive_deep,
+            steps_walkthrough: data.steps_walkthrough,
+            diagram_nodes: data.nodes,
+            diagram_edges: data.edges,
+            clarifications: data.clarifications
+          }
+          console.log('systemDesignSolution: ', systemDesignSolution)
+          queryClient.setQueryData(["system_design_solution"], systemDesignSolution)
+          setSystemDesignSolutionData(systemDesignSolution.description)
+          setDescription(systemDesignSolution.description)
+          setFunctionalRequirements(systemDesignSolution.functional_requirements)
+          setNonFunctionalRequirements(systemDesignSolution.non_functional_requirements)
+          setDatabaseSchema(systemDesignSolution.database_schema)
+          setTradeOffs(systemDesignSolution.component_dive_deep)
+          setStepsWalkthrough(systemDesignSolution.steps_walkthrough)
+          setDiagramNodes(systemDesignSolution.diagram_nodes)
+          setDiagramEdges(systemDesignSolution.diagram_edges)
+          setClarifications(systemDesignSolution.clarifications)
+        }
 
         // Fetch latest screenshots when solution is successful
         const fetchScreenshots = async () => {
@@ -969,9 +874,38 @@ const Solutions: React.FC<SolutionsProps> = ({
         setTimeComplexityData(solution?.time_complexity ?? null)
         setSpaceComplexityData(solution?.space_complexity ?? null)
       }
+      console.log('event:', event)
+      if (event?.query.queryKey[0] === "system_design_solution") {
+        const systemDesignSolution = queryClient.getQueryData(["system_design_solution"]) as {
+          description: string
+          functional_requirements: FunctionalRequirement[]
+          non_functional_requirements: NonFunctionalRequirements
+          database_schema: TableSchema[]
+          component_dive_deep: TradeOffItem[]
+          steps_walkthrough: string[]
+          diagram_nodes: Node[]
+          diagram_edges: Edge[]
+          clarifications: Clarification[]
+        } | null
+        console.log('event @:', systemDesignSolution)
+        if (systemDesignSolution) {
+          setSystemDesignSolutionData(systemDesignSolution.description)
+          setDescription(systemDesignSolution.description)
+          setFunctionalRequirements(systemDesignSolution.functional_requirements)
+          setNonFunctionalRequirements(systemDesignSolution.non_functional_requirements)
+          setDatabaseSchema(systemDesignSolution.database_schema)
+          setTradeOffs(systemDesignSolution.component_dive_deep)
+          setStepsWalkthrough(systemDesignSolution.steps_walkthrough)
+          setClarifications(systemDesignSolution.clarifications)
+          setDiagramNodes(systemDesignSolution.diagram_nodes)
+          setDiagramEdges(systemDesignSolution.diagram_edges)
+        } else {
+          console.warn("Received empty or invalid system design solution data")
+        }
+      }      
     })
     return () => unsubscribe()
-  }, [queryClient])
+  }, [queryClient, currentInterviewMode])
 
   const handleTooltipVisibilityChange = (visible: boolean, height: number) => {
     setIsTooltipVisible(visible)
@@ -1069,6 +1003,13 @@ const Solutions: React.FC<SolutionsProps> = ({
                       )}
                     </>
                   )}
+                  {!systemDesignSoltionData && currentInterviewMode === "SystemDesign" && (
+                    <div className="mt-4 flex">
+                      <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+                        Generating solutions...
+                      </p>
+                    </div>
+                  )}                  
 
                   {solutionData && currentInterviewMode === "Coding" && (
                     <>
@@ -1132,7 +1073,7 @@ const Solutions: React.FC<SolutionsProps> = ({
                     {systemDesignSoltionData && currentInterviewMode === "SystemDesign" && activeSystemDesignSolutionTab === 'Diagram' && (
                       <div className="flex w-full cursor-default">
                         <div className="w-1/2 p-4">
-                          <StepsWalkthroughSection steps_walkthrough={systemDesignSoltionData.steps_walkthrough} />
+                          <StepsWalkthroughSection steps_walkthrough={stepsWalkthrough ?? []} />
                         </div>
                         <div className="w-1/2 h-[920px] overflow-hidden flex items-center justify-center cursor-default bg-transparent">
                         <ReactFlow
@@ -1150,21 +1091,21 @@ const Solutions: React.FC<SolutionsProps> = ({
                     )}
                     {systemDesignSoltionData && currentInterviewMode === "SystemDesign" && activeSystemDesignSolutionTab === 'Description' && (
                       <SystemDesignDescriptionSection
-                        description={systemDesignSoltionData.description || ""}
-                        clarifications={systemDesignSoltionData.clarifications || []}
+                        description={description || ""}
+                        clarifications={clarifications || []}
                       />                            
                     )}
                     {systemDesignSoltionData && currentInterviewMode === "SystemDesign" && activeSystemDesignSolutionTab === 'Requirements' && (
                       <RequirementsSection
-                        functionalRequirements={systemDesignSoltionData.functional_requirements || []}
-                        nonFunctionalRequirements={systemDesignSoltionData.non_functional_requirements || {}}
+                        functionalRequirements={functionalRequirements || []}
+                        nonFunctionalRequirements={nonFunctionalRequirements}
                       />                            
                     )}
                     {systemDesignSoltionData && currentInterviewMode === "SystemDesign" && activeSystemDesignSolutionTab === 'Database Schema' && (
-                      <DatabaseSchema schema={systemDesignSoltionData.database_schema || []}/>                            
+                      <DatabaseSchema schema={databaseSchema || []}/>                            
                     )}     
                     {systemDesignSoltionData && currentInterviewMode === "SystemDesign" && activeSystemDesignSolutionTab === 'Tradeoff' && (
-                      <TradeOffSession data={systemDesignSoltionData.component_dive_deep} />
+                      <TradeOffSession data={tradeOffs || []} />
                     )}
                 </div>                
               </div>

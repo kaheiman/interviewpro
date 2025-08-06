@@ -88,7 +88,7 @@ export class ConfigHelper extends EventEmitter {
         
         // Ensure apiProvider is a valid value
         if (config.apiProvider !== "openai" && config.apiProvider !== "gemini") {
-          config.apiProvider = "gemini"; // Default to Gemini if invalid
+          config.apiProvider = "openai"; // Default to Gemini if invalid
         }
         
         // Sanitize model selections to ensure only allowed models are used

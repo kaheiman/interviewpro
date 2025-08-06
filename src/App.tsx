@@ -47,7 +47,12 @@ function App() {
   // Note: Model selection is now handled via separate extraction/solution/debugging model settings
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [currentInterviewMode, setInterviewMode] = useState<string>("SystemDesign") // Coding | SystemDesign
+  const [currentInterviewMode, setInterviewMode] = useState<string>("Coding") // Coding | SystemDesign
+
+  const updateInterviewMode = useCallback((newMode: string) => {
+    setInterviewMode(newMode)
+    window.__INTERVIEW_MODE__ = newMode
+  }, [])
 
   // Set unlimited credits
   const updateCredits = useCallback(() => {
@@ -89,6 +94,7 @@ function App() {
     const checkApiKey = async () => {
       try {
         const hasKey = await window.electronAPI.checkApiKey()
+        console.log("API Key check result:", hasKey)
         setHasApiKey(hasKey)
         
         // If no API key is found, show the settings dialog after a short delay
@@ -249,7 +255,7 @@ function App() {
                   currentLanguage={currentLanguage}
                   setLanguage={updateLanguage}
                   currentInterviewMode={currentInterviewMode}
-                  setInterviewMode={setInterviewMode}
+                  setInterviewMode={updateInterviewMode}
                 />
               ) : (
                 <WelcomeScreen onOpenSettings={handleOpenSettings} />

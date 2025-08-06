@@ -123,6 +123,29 @@ export class ProcessingHelper {
     }
   }
 
+  private async getInterviewMode(): Promise<string> {
+    const config = configHelper.loadConfig();
+    if (config.interviewMode) {
+      return config.interviewMode;
+    }
+
+    const mainWindow = this.deps.getMainWindow()
+    console.log('mainWindow:', mainWindow)
+    if (!mainWindow) return "Coding"
+
+    try {
+      await this.waitForInitialization(mainWindow)
+      const mode = await mainWindow.webContents.executeJavaScript(
+        "window.__INTERVIEW_MODE__"
+      )
+      if (mode !== undefined && mode !== null) return mode
+      return "Coding"
+    } catch (error) {
+      console.error("Error getting interview mode:", error)
+      return "Coding"
+    }
+  }
+
   private async getLanguage(): Promise<string> {
     try {
       // Get language from config
@@ -257,6 +280,48 @@ export class ProcessingHelper {
           throw new Error("Failed to load screenshot data");
         }
 
+        // move to try catch block
+        const interviewMode = await this.getInterviewMode()
+        if (interviewMode === "SystemDesign") {
+          console.log("System Design mode detected, skipping screenshot processing")
+          const systemDesignResultData = await this.processSystemDesignScreenshot(validScreenshots, signal);
+
+          console.log("System Design AI result data:", systemDesignResultData)
+
+          if (!systemDesignResultData.success) {
+            console.log("Processing system design data failed:", systemDesignResultData.error)
+            if (systemDesignResultData.error?.includes("API Key") || systemDesignResultData.error?.includes("OpenAI") || systemDesignResultData.error?.includes("Gemini")) {
+              mainWindow.webContents.send(
+                this.deps.PROCESSING_EVENTS.API_KEY_INVALID
+              )
+            } else {
+              mainWindow.webContents.send(
+                this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
+                systemDesignResultData.error
+              )
+            }
+            // Reset view back to queue on error
+            console.log("Resetting view to queue due to error")
+            this.deps.setView("queue")
+            return            
+          }
+
+          // must require INITIAL_START and processing-status
+          mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.INITIAL_START)
+          mainWindow.webContents.send("processing-status", {
+            message: "Problem analyzed successfully. Preparing to generate solution...",
+            progress: 40
+          });
+
+          this.screenshotHelper.clearExtraScreenshotQueue();
+          this.deps.setView("solutions")
+
+          mainWindow.webContents.send(
+            this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+            systemDesignResultData.data
+          );
+          return
+        }        
         const result = await this.processScreenshotsHelper(validScreenshots, signal)
 
         if (!result.success) {
@@ -832,6 +897,186 @@ Your solution should be efficient, well-commented, and handle edge cases.
       };
 
       return { success: true, data: formattedResponse };
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        return {
+          success: false,
+          error: "Processing was canceled by the user."
+        };
+      }
+      
+      if (error?.response?.status === 401) {
+        return {
+          success: false,
+          error: "Invalid OpenAI API key. Please check your settings."
+        };
+      } else if (error?.response?.status === 429) {
+        return {
+          success: false,
+          error: "OpenAI API rate limit exceeded or insufficient credits. Please try again later."
+        };
+      }
+      
+      console.error("Solution generation error:", error);
+      return { success: false, error: error.message || "Failed to generate solution" };
+    }
+  }
+
+  private async processSystemDesignScreenshot(screenshots: Array<{ path: string; data: string }>, signal: AbortSignal) {
+    try {
+      const config = configHelper.loadConfig();
+      // Create prompt for solution generation
+      const promptText = `
+As a Principal Engineer in large scale tech driven companies like google, you are participating in a system design discussion. 
+You're expected to evaluate tradeoffs, define system boundaries, APIs, scale characteristics, and clarify ambiguous areas with product and engineering peers.
+Bonus to use technical domain keywords
+
+PROBLEM STATEMENT: BASED ON THE SCREENSHOT YOU SEE, GENERATE A PROBLEM STATEMENT
+
+Generate a high-level system architecture diagram in code format compatible with React Flow. The output should be a JavaScript object with two arrays:
+{ nodes: Node[], edges: Edge[] }
+* Each item in the nodes array should represent a core component of the system.
+* Each item in the edges array should represent a connection or transition between components, with an optional label to describe the action or data flow.
+* Each node should have:
+    * id (string, unique), the entry point should be 1, and the id can use index + 1
+    * data.label (name of the component),
+    * position: { x: number, y: number } (can be { x: 0, y: 0 } for layout later)
+* Each edge should have:
+    * id (e.g., e1-2), where 1 is the source node id and 2 is target node id
+    * source and target (match node ids),
+    * Optional label to describe the interaction.
+Example structure:
+const nodes = [
+  { id: '1', data: { label: 'API Gateway' }, position: { x: 0, y: 0 } },
+  { id: '2', data: { label: 'Auth Service' }, position: { x: 0, y: 0 } },
+];
+
+const edges = [
+  { id: 'e1-2', source: '1', target: '2', label: 'Authenticate Request' },
+];
+
+Please output the complete { nodes, edges } object in this format, based on the system
+
+{
+  "problem_statement": "string", // based on the screenshot, analyze what is the problem statement
+  "description": "string",     // it is a paraphrase of your understanding on the problem, eg: what a "VirusTotal-like" system is
+  "clarifications": [ { "questions", "string", "reason": "string" }], // list 3-4 high quality questions you want to get more clarification from your peers and the reason behind
+  "functional_requirements": [ { api_interface, "workflow": string, "use_case": "string"} ], // list 3 core use cases, each use case is a workflow how the system being interact, also digest the workflow into api interface with request and response looks like
+  "non_functional_requirements": {
+    "traffic": "string",
+    "storage": "string",
+    "latency": "string",
+    "optimization_in_quality": "string"
+  } // estimate the number in traffic (any spike), storage size (how you calculate it), latency (SLO), what quality you want to focus optimize in this discussion and any tradeoff achieving this quality
+  "component_dive_deep": [ { alternative, reason, tradeoff, component } ], // based on the solution pick 3 components to talk about the tradeoff with alternative solution and reason. Focus on database to use, event driven or not, Redis or not
+  "open_questions": "string" // any questions you think critical to bring up the table that others may overlook
+  "nodes": [], //  architecture diagram components node
+  "edges": [],  // architecture diagram transition edges
+  "steps_walkthrough": [] // Provide a detailed, step-by-step breakdown of how the system works, explaining the flow of data and responsibilities of each component, each step should match the node and transition edge,
+  "database_schema": [json] // Database schema in array of json format, the json format should be same as below
+    interface ColumnSchema {
+      [columnName: string]: string | undefined; // with what is the type of the column and what is it used for
+    }
+    
+    interface TableSchema {
+      table: string;
+      columns: ColumnSchema;
+      constraints: string[];
+    }
+}
+
+Only return 
+1. this JSON structure with thoughtful, realistic content. 
+
+Do not include any additional explanation.
+`;
+
+      let responseContent;
+      
+      if (config.apiProvider === "openai") {
+        // OpenAI processing
+        if (!this.openaiClient) {
+          return {
+            success: false,
+            error: "OpenAI API key not configured. Please check your settings."
+          };
+        }
+        
+        // Send to OpenAI API
+        const solutionResponse = await this.openaiClient.chat.completions.create({
+          model: config.solutionModel || "gpt-4o",
+          messages: [
+            { role: "system", content: "You are an expert system design interview assistant.  Analyze the screenshot of the system design problem and extract the information in JSON format based on user requirements" },
+            { role: "user", 
+              content: [{
+                type: "text" as const, 
+                text: promptText
+              },
+              ...screenshots.map(data => ({
+                type: "image_url" as const,
+                image_url: { url: `data:image/png;base64,${data.data}` }
+              }))
+            ]}
+          ],
+          max_tokens: 7000,
+          temperature: 0.2
+        });
+
+        const responseText = solutionResponse.choices[0].message.content;
+        // Handle when OpenAI might wrap the JSON in markdown code blocks
+        const jsonText = responseText.replace(/```json|```/g, '').trim();
+        responseContent = JSON.parse(jsonText);
+      } else {
+        // Gemini processing
+        if (!this.geminiApiKey) {
+          return {
+            success: false,
+            error: "Gemini API key not configured. Please check your settings."
+          };
+        }
+        
+        try {
+          // Create Gemini message structure
+          const geminiMessages = [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+                }
+              ]
+            }
+          ];
+
+          // Make API request to Gemini
+          const response = await axios.default.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+            {
+              contents: geminiMessages,
+              generationConfig: {
+                temperature: 0.2,
+                maxOutputTokens: 7000
+              }
+            },
+            { signal }
+          );
+
+          const responseData = response.data as GeminiResponse;
+          
+          if (!responseData.candidates || responseData.candidates.length === 0) {
+            throw new Error("Empty response from Gemini API");
+          }
+          
+          responseContent = responseData.candidates[0].content.parts[0].text;
+        } catch (error) {
+          console.error("Error using Gemini API for solution:", error);
+          return {
+            success: false,
+            error: "Failed to generate solution with Gemini API. Please check your API key or try again later."
+          };
+        }
+      }
+      return { success: true, data: responseContent };
     } catch (error: any) {
       if (axios.isCancel(error)) {
         return {

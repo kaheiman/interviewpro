@@ -2,7 +2,7 @@ import React from "react"
 
 interface InterviewModeSelectorProps {
   currentInterviewMode: string
-  setInterviewMode: React.Dispatch<React.SetStateAction<string>>  
+  setInterviewMode: (newMode: string) => void  
 }
 
 export const InterviewModeSelector: React.FC<InterviewModeSelectorProps> = ({

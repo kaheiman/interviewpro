@@ -15,7 +15,7 @@ export interface SolutionCommandsProps {
   currentLanguage: string
   setLanguage: (language: string) => void
   currentInterviewMode: string
-  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
+  setInterviewMode: (newMode: string) => void
 }
 
 const handleSignOut = async () => {

@@ -10,7 +10,7 @@ interface SubscribedAppProps {
   currentLanguage: string
   setLanguage: (newLanguage: string) => void
   currentInterviewMode: string
-  setInterviewMode: React.Dispatch<React.SetStateAction<string>>
+  setInterviewMode: (newMode: string) => void
 }
 
 const SubscribedApp: React.FC<SubscribedAppProps> = ({
@@ -20,8 +20,9 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
   currentInterviewMode,
   setInterviewMode
 }) => {
+
   const queryClient = useQueryClient()
-  const [view, setView] = useState<"queue" | "solutions" | "debug">("solutions")
+  const [view, setView] = useState<"queue" | "solutions" | "debug">("queue")
   const containerRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
 
@@ -39,6 +40,9 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
       })
       queryClient.invalidateQueries({
         queryKey: ["new_solution"]
+      })
+      queryClient.invalidateQueries({
+        queryKey: ["system_design_solution"]
       })
       setView("queue")
     })
