@@ -17,11 +17,12 @@ import {
 
 import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
 
-import { ProblemStatementData } from "../types/solutions"
+import { ProblemStatementData, CodeAnalysisData } from "../types/solutions"
 import SolutionCommands from "../components/Solutions/SolutionCommands"
 import Debug from "./Debug"
 import { useToast } from "../contexts/toast"
 import { COMMAND_KEY } from "../utils/platform"
+import { json } from "stream/consumers"
 
 const TABS = ['Description', 'Requirements', 'Diagram', 'Database Schema', 'Tradeoff'];
 
@@ -556,6 +557,8 @@ const Solutions: React.FC<SolutionsProps> = ({
   const [debugProcessing, setDebugProcessing] = useState(false)
   const [problemStatementData, setProblemStatementData] =
     useState<ProblemStatementData | null>(null)
+  const [codeAnalysisData, setCodeAnalysisData] =
+    useState<CodeAnalysisData | null>(null)
 
   const { nodes, edges } = useMemo(() => getLayoutedElements(diagramNodes, diagramEdges), [diagramNodes, diagramEdges]);
   const [activeSystemDesignSolutionTab, setActiveSystemDesignSolutionTab] = useState('Diagram');
@@ -688,7 +691,7 @@ const Solutions: React.FC<SolutionsProps> = ({
         setDiagramEdges([])
         setClarifications(null)
       }),
-      window.electronAPI.onProblemExtracted((data) => {
+      window.electronAPI.onProblemExtracted((data: any) => {
         queryClient.setQueryData(["problem_statement"], data)
       }),
       //if there was an error processing the initial solution
@@ -743,9 +746,32 @@ const Solutions: React.FC<SolutionsProps> = ({
             console.warn("Received empty or invalid system design solution data")
           }          
         }
+        if (currentInterviewMode === "Bugfix") {
+          const bugfixSolution = queryClient.getQueryData(["bugfix_solution"]) as {
+            debug_analysis: string
+            code: string
+            time_complexity: string
+            space_complexity: string
+          } | null
+          if (!solutionData) {
+            setView("queue")
+          }
+          setSolutionData(null)
+          setThoughtsData(null)
+          setTimeComplexityData(null)
+          setSpaceComplexityData(null)
+          if (bugfixSolution) {
+            setSolutionData(bugfixSolution.code)
+            setThoughtsData([bugfixSolution.debug_analysis])
+            setTimeComplexityData(bugfixSolution.time_complexity)
+            setSpaceComplexityData(bugfixSolution.space_complexity)
+          } else {
+            console.warn("Received empty or invalid bugfix solution data")
+          }
+        }
       }),
       //when the initial solution is generated, we'll set the solution data to that
-      window.electronAPI.onSolutionSuccess((data) => {
+      window.electronAPI.onSolutionSuccess((data: any) => {
         if (!data) {
           console.warn("Received empty or invalid solution data")
           return
@@ -792,12 +818,79 @@ const Solutions: React.FC<SolutionsProps> = ({
           setClarifications(systemDesignSolution.clarifications)
         }
 
+        if (currentInterviewMode === "Bugfix") {
+          const bugfixSolution = {
+            debug_analysis: data.debug_analysis,
+            code: data.code,
+            time_complexity: data.time_complexity,
+            space_complexity: data.space_complexity
+          }
+          
+          queryClient.setQueryData(["bugfix_solution"], bugfixSolution)
+          setSolutionData(bugfixSolution.code || null)
+          setThoughtsData(bugfixSolution.debug_analysis ? [bugfixSolution.debug_analysis] : null)
+          setTimeComplexityData(bugfixSolution.time_complexity || null)
+          setSpaceComplexityData(bugfixSolution.space_complexity || null)
+        }
+
         // Fetch latest screenshots when solution is successful
         const fetchScreenshots = async () => {
           try {
             const existing = await window.electronAPI.getScreenshots()
             const screenshots =
-              existing.previews?.map((p) => ({
+              existing.previews?.map((p: any) => ({
+                id: p.path,
+                path: p.path,
+                preview: p.preview,
+                timestamp: Date.now()
+              })) || []
+            setExtraScreenshots(screenshots)
+          } catch (error) {
+            console.error("Error loading extra screenshots:", error)
+            setExtraScreenshots([])
+          }
+        }
+        fetchScreenshots()
+      }),
+
+      //when code analysis is completed, set the analysis data
+      window.electronAPI.onCodeAnalyzed((data: CodeAnalysisData) => {
+        if (!data) {
+          console.warn("Received empty or invalid code analysis data")
+          return
+        }
+        console.log('Received code analysis data: ', data)
+        
+        // Store the code analysis data
+        queryClient.setQueryData(["code_analysis"], data)
+        setCodeAnalysisData(data)
+        
+        // Set the improved code as the solution and explanation/issues as thoughts
+        setSolutionData(data.completed_code || data.explanation || null)
+        
+        // Handle thoughts data - prioritize issues over explanation
+        if (data.issues && Array.isArray(data.issues) && data.issues.length > 0) {
+          setThoughtsData(data.issues)
+        } else if (data.explanation) {
+          setThoughtsData([data.explanation])
+        } else {
+          setThoughtsData(["Code analysis completed"])
+        }
+        
+        setTimeComplexityData("N/A - Code Analysis")
+        setSpaceComplexityData("N/A - Code Analysis")
+        
+        // Force a re-render by updating the query cache
+        queryClient.invalidateQueries({
+          queryKey: ["code_analysis"]
+        })
+        
+        // Fetch latest screenshots
+        const fetchScreenshots = async () => {
+          try {
+            const existing = await window.electronAPI.getScreenshots()
+            const screenshots =
+              existing.previews?.map((p: any) => ({
                 id: p.path,
                 path: p.path,
                 preview: p.preview,
@@ -820,7 +913,7 @@ const Solutions: React.FC<SolutionsProps> = ({
         setDebugProcessing(true)
       }),
       //the first time debugging works, we'll set the view to debug and populate the cache with the data
-      window.electronAPI.onDebugSuccess((data) => {
+      window.electronAPI.onDebugSuccess((data: any) => {
         queryClient.setQueryData(["new_solution"], data)
         setDebugProcessing(false)
       }),
@@ -853,6 +946,9 @@ const Solutions: React.FC<SolutionsProps> = ({
     setProblemStatementData(
       queryClient.getQueryData(["problem_statement"]) || null
     )
+    setCodeAnalysisData(
+      queryClient.getQueryData(["code_analysis"]) || null
+    )
     setSolutionData(queryClient.getQueryData(["solution"]) || null)
 
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
@@ -860,6 +956,28 @@ const Solutions: React.FC<SolutionsProps> = ({
         setProblemStatementData(
           queryClient.getQueryData(["problem_statement"]) || null
         )
+      }
+      if (event?.query.queryKey[0] === "code_analysis") {
+        const codeAnalysis = queryClient.getQueryData(["code_analysis"]) as CodeAnalysisData | null
+        
+        setCodeAnalysisData(codeAnalysis)
+        
+        // Update UI with the latest code analysis data
+        if (codeAnalysis) {
+          setSolutionData(codeAnalysis.completed_code || codeAnalysis.explanation || null)
+          
+          // Handle thoughts data - prioritize issues over explanation
+          if (codeAnalysis.issues && Array.isArray(codeAnalysis.issues) && codeAnalysis.issues.length > 0) {
+            setThoughtsData(codeAnalysis.issues)
+          } else if (codeAnalysis.explanation) {
+            setThoughtsData([codeAnalysis.explanation])
+          } else {
+            setThoughtsData(["Code analysis completed"])
+          }
+          
+          setTimeComplexityData("N/A - Code Analysis")
+          setSpaceComplexityData("N/A - Code Analysis")
+        }
       }
       if (event?.query.queryKey[0] === "solution") {
         const solution = queryClient.getQueryData(["solution"]) as {
@@ -987,19 +1105,74 @@ const Solutions: React.FC<SolutionsProps> = ({
             <div className="w-full text-sm text-black bg-black/60 rounded-md">
               <div className="rounded-lg overflow-hidden">
                 <div className="px-4 py-3 space-y-4 max-w-full">
-                  {!solutionData && currentInterviewMode === "Coding" && (
+                  {!solutionData && (currentInterviewMode === "Coding" || currentInterviewMode === "Bugfix") && (
                     <>
-                      <ContentSection
-                        title="Problem Statement"
-                        content={problemStatementData?.problem_statement}
-                        isLoading={!problemStatementData}
-                      />
+                      {/* Show problem statement if we have one */}
                       {problemStatementData && (
+                        <ContentSection
+                          title="Problem Statement"
+                          content={problemStatementData?.problem_statement}
+                          isLoading={!problemStatementData}
+                        />
+                      )}
+                      
+                      {/* Show code analysis if we have one */}
+                      {codeAnalysisData && (
+                        <>
+                          <ContentSection
+                            title="Code Analysis"
+                            content={codeAnalysisData.explanation}
+                            isLoading={false}
+                          />
+                          <SolutionSection
+                            title="Issues Found"
+                            content={codeAnalysisData.issues && codeAnalysisData.issues.length > 0 
+                              ? codeAnalysisData.issues.join('\n\n') 
+                              : "No issues detected"
+                            }
+                            isLoading={false}
+                            currentLanguage="json"
+                          />
+
+                          <SolutionSection
+                            title="Solution"
+                            content={codeAnalysisData.completed_code || "No completed_code found"}
+                            isLoading={false}
+                            currentLanguage={currentLanguage}
+                          />
+                            <ContentSection
+                              title="Completed Code"
+                              content={codeAnalysisData.completed_code || "No completed_code found"}
+                              isLoading={false}
+                            />
+                          
+                          <ContentSection
+                            title="DEBUG: Code Analysis JSON"
+                            content={codeAnalysisData ? 
+                              JSON.stringify(codeAnalysisData, null, 2) : 
+                              "No code analysis data"
+                            }
+                            isLoading={false}
+                          />                            
+                        </>
+                      )}
+                      
+                      {/* Show loading state */}
+                      {problemStatementData && !codeAnalysisData && (
                         <div className="mt-4 flex">
                           <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
                             Generating solutions...
                           </p>
                         </div>
+                      )}
+                      
+                      {/* Show analysis loading state */}
+                      {!problemStatementData && !codeAnalysisData && (
+                        <ContentSection
+                          title="Analyzing Screenshots"
+                          content=""
+                          isLoading={true}
+                        />
                       )}
                     </>
                   )}
@@ -1011,10 +1184,10 @@ const Solutions: React.FC<SolutionsProps> = ({
                     </div>
                   )}                  
 
-                  {solutionData && currentInterviewMode === "Coding" && (
+                  {solutionData && (currentInterviewMode === "Coding" || currentInterviewMode === "Bugfix") && (
                     <>
                       <ContentSection
-                        title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
+                        title={`${currentInterviewMode === "Bugfix" ? "Bug Analysis" : "My Thoughts"} (${COMMAND_KEY} + Arrow keys to scroll)`}
                         content={
                           thoughtsData && (
                             <div className="space-y-3">
@@ -1033,6 +1206,18 @@ const Solutions: React.FC<SolutionsProps> = ({
                           )
                         }
                         isLoading={!thoughtsData}
+                      />
+
+                      
+                      {/* DEBUG: Show raw JSON data */}
+                      <SolutionSection
+                        title="DEBUG: Problem Info JSON"
+                        content={problemStatementData ? 
+                          JSON.stringify(problemStatementData, null, 2) : 
+                          "No problem statement data"
+                        }
+                        isLoading={false}
+                        currentLanguage="json"
                       />
 
                       <SolutionSection

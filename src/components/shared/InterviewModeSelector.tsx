@@ -42,6 +42,7 @@ export const InterviewModeSelector: React.FC<InterviewModeSelectorProps> = ({
         >
           <option value="Coding" className="bg-black text-white">Coding</option>
           <option value="SystemDesign" className="bg-black text-white">System Design</option>
+          <option value="Bugfix" className="bg-black text-white">Bugfix</option>
         </select>
       </div>
     </div>

@@ -14,7 +14,7 @@ const isDev = process.env.NODE_ENV === "development"
 
 // Application State
 const state = {
-  mode: "Coding" as "Coding" | "SystemDesign",
+  mode: "Coding" as "Coding" | "SystemDesign" | "Bugfix",
   // Window management properties
   mainWindow: null as BrowserWindow | null,
   isWindowVisible: false,
@@ -48,7 +48,8 @@ const state = {
     INITIAL_SOLUTION_ERROR: "solution-error",
     DEBUG_START: "debug-start",
     DEBUG_SUCCESS: "debug-success",
-    DEBUG_ERROR: "debug-error"
+    DEBUG_ERROR: "debug-error",
+    CODE_ANALYZED: "code-analyzed"
   } as const
 }
 
@@ -622,11 +623,11 @@ function getMainWindow(): BrowserWindow | null {
   return state.mainWindow
 }
 
-function getInterviewMode(): "Coding" | "SystemDesign" {
+function getInterviewMode(): "Coding" | "SystemDesign" | "Bugfix" {
   return state.mode
 }
 
-function setInterviewMode(mode: "Coding" | "SystemDesign"): void {
+function setInterviewMode(mode: "Coding" | "SystemDesign" | "Bugfix"): void {
   state.mode = mode
 }
 

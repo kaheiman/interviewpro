@@ -7,6 +7,7 @@ import * as axios from "axios"
 import { app, BrowserWindow, dialog } from "electron"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
+import { ProblemInfo, CodeInfo } from "../src/types/index.js"
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -319,6 +320,47 @@ export class ProcessingHelper {
           mainWindow.webContents.send(
             this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
             systemDesignResultData.data
+          );
+          return
+        }
+        
+        if (interviewMode === "Bugfix") {
+          console.log("Bugfix mode detected, processing for debugging")
+          const bugfixResultData = await this.processBugfixScreenshot(validScreenshots, signal);
+
+          console.log("Bugfix AI result data:", bugfixResultData)
+
+          if (!bugfixResultData.success) {
+            console.log("Processing bugfix data failed:", bugfixResultData.error)
+            if (bugfixResultData.error?.includes("API Key") || bugfixResultData.error?.includes("OpenAI") || bugfixResultData.error?.includes("Gemini")) {
+              mainWindow.webContents.send(
+                this.deps.PROCESSING_EVENTS.API_KEY_INVALID
+              )
+            } else {
+              mainWindow.webContents.send(
+                this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
+                bugfixResultData.error
+              )
+            }
+            // Reset view back to queue on error
+            console.log("Resetting view to queue due to error")
+            this.deps.setView("queue")
+            return            
+          }
+
+          // must require INITIAL_START and processing-status
+          mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.INITIAL_START)
+          mainWindow.webContents.send("processing-status", {
+            message: "Bug analysis complete. Preparing to generate fix...",
+            progress: 40
+          });
+
+          this.screenshotHelper.clearExtraScreenshotQueue();
+          this.deps.setView("solutions")
+
+          mainWindow.webContents.send(
+            this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+            bugfixResultData.data
           );
           return
         }        
@@ -1320,6 +1362,158 @@ If you include code examples, use proper markdown code blocks with language spec
     }
   }
 
+  private async processBugfixScreenshot(screenshots: Array<{ path: string; data: string }>, signal: AbortSignal) {
+    try {
+      const config = configHelper.loadConfig();
+      const language = await this.getLanguage();
+      
+      // Create prompt for bugfix analysis
+      const mainWindow = this.deps.getMainWindow();
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Analyzing code for bugs and issues...",
+          progress: 20
+        });
+      }
+
+      let bugfixContent;
+
+      if (this.openaiClient) {
+        const response = await this.openaiClient.chat.completions.create({
+          model: config.extractionModel || "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: `You are an expert coding interview assistant specializing in bug detection and code fixing. Analyze these screenshots which contain code that needs debugging or improvement. Provide a comprehensive analysis with clear explanations and fixed code.`
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `I need help finding and fixing bugs in this ${language} code. Please analyze the screenshots and provide:
+
+1. **Bug Identification**: List all bugs, errors, or issues found in the code
+2. **Root Cause Analysis**: Explain why each bug occurs
+3. **Fixed Code**: Provide the corrected version of the code
+4. **Improvements**: Suggest additional optimizations or best practices
+5. **Testing**: Recommend how to test the fixes
+
+Please be thorough in your analysis and provide clear, actionable solutions.`
+                },
+                ...screenshots.map(screenshot => ({
+                  type: "image_url" as const,
+                  image_url: {
+                    url: `data:image/png;base64,${screenshot.data}`,
+                    detail: "high" as const
+                  }
+                }))
+              ]
+            }
+          ],
+          max_tokens: 4000
+        }, { signal });
+
+        bugfixContent = response.choices[0].message.content;
+      } else if (this.geminiApiKey) {
+        if (mainWindow) {
+          mainWindow.webContents.send("processing-status", {
+            message: "Analyzing code for bugs with Gemini...",
+            progress: 30
+          });
+        }
+
+        const bugfixPrompt = `You are an expert coding interview assistant specializing in bug detection and code fixing. Analyze these screenshots which contain code that needs debugging or improvement.
+
+I need help finding and fixing bugs in this ${language} code. Please analyze the screenshots and provide:
+
+1. **Bug Identification**: List all bugs, errors, or issues found in the code
+2. **Root Cause Analysis**: Explain why each bug occurs  
+3. **Fixed Code**: Provide the corrected version of the code
+4. **Improvements**: Suggest additional optimizations or best practices
+5. **Testing**: Recommend how to test the fixes
+
+Please be thorough in your analysis and provide clear, actionable solutions.`;
+
+        const geminiMessages = [
+          {
+            role: "user",
+            parts: [
+              { text: bugfixPrompt },
+              ...screenshots.map(screenshot => ({
+                inlineData: {
+                  mimeType: "image/png",
+                  data: screenshot.data
+                }
+              }))
+            ]
+          }
+        ];
+
+        const response = await axios.default.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+          {
+            contents: geminiMessages,
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 4000
+            }
+          },
+          { signal }
+        );
+
+        bugfixContent = response.data.candidates[0].content.parts[0].text;
+      } else {
+        return {
+          success: false,
+          error: "No AI client available. Please configure your API key in settings."
+        };
+      }
+
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Bugfix analysis complete",
+          progress: 100
+        });
+      }
+
+      let extractedCode = "// Bugfix mode - see analysis below";
+      const codeMatch = bugfixContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
+      if (codeMatch && codeMatch[1]) {
+        extractedCode = codeMatch[1].trim();
+      }
+
+      let formattedBugfixContent = bugfixContent;
+      
+      if (!bugfixContent.includes('# ') && !bugfixContent.includes('## ')) {
+        formattedBugfixContent = bugfixContent
+          .replace(/bug identification|bugs found|issues found/i, '## Bug Identification')
+          .replace(/root cause|root cause analysis/i, '## Root Cause Analysis')
+          .replace(/fixed code|corrected code|solution/i, '## Fixed Code')
+          .replace(/improvements|optimizations|best practices/i, '## Improvements')
+          .replace(/testing|test cases/i, '## Testing Recommendations');
+      }
+
+      const bulletPoints = formattedBugfixContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
+      const thoughtSteps = bulletPoints 
+        ? bulletPoints.map((point: string) => point.replace(/^[\s\-*•\d\.]+/, '').trim())
+        : ["Bugfix analysis based on your screenshots"];
+
+      return {
+        success: true,
+        data: {
+          debug_analysis: formattedBugfixContent,
+          code: extractedCode,
+          time_complexity: "N/A - Bugfix mode",
+          space_complexity: "N/A - Bugfix mode"
+        }
+      };
+    } catch (error: any) {
+      console.error("Bugfix processing error:", error);
+      return { success: false, error: error.message || "Failed to process bugfix request" };
+    }
+  }
+
   public cancelOngoingRequests(): void {
     let wasCancelled = false
 
@@ -1342,6 +1536,187 @@ If you include code examples, use proper markdown code blocks with language spec
     const mainWindow = this.deps.getMainWindow()
     if (wasCancelled && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
+    }
+  }
+
+  private async generateImprovedCode(
+    problemInfo: any,
+    language: string,
+    signal: AbortSignal
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      const config = configHelper.loadConfig();
+      
+      if (!config.apiProvider || config.apiProvider === "openai") {
+        // Use OpenAI API
+        if (!this.openaiClient) {
+          this.initializeAIClient(); // Try to reinitialize
+          
+          if (!this.openaiClient) {
+            return {
+              success: false,
+              error: "OpenAI API key not configured or invalid. Please check your settings."
+            };
+          }
+        }
+
+        const messages = [
+          {
+            role: "system" as const,
+            content: `You are an expert ${language} developer. Your task is to analyze the provided code and improve it by:
+
+1. Completing any unfinished code sections
+2. Fixing potential bugs or issues
+3. Improving code quality and best practices
+4. Adding proper error handling where needed
+5. Optimizing performance if applicable
+
+Return your response as a JSON object with the following structure:
+{
+  "type": "code",
+  "language": "${language}",
+  "explanation": "Clear explanation of what was improved and why",
+  "issues": ["List of issues found and fixed"],
+  "completed_code": "The complete, improved version of the code"
+}
+
+Focus on making the code production-ready and following best practices for ${language}.`
+          },
+          {
+            role: "user" as const,
+            content: `Please analyze and improve the following ${language} code:
+
+**Original Code:**
+\`\`\`${language}
+${problemInfo.completed_code}
+\`\`\`
+
+**Current Analysis:**
+${problemInfo.explanation}
+
+**Language:** ${language}
+
+Please provide a complete, improved version of this code that addresses any issues and follows best practices.`
+          }
+        ];
+
+        const response = await this.openaiClient.chat.completions.create({
+          model: config.extractionModel || "gpt-4o",
+          messages: messages,
+          max_tokens: 4000,
+          temperature: 0.2
+        }, { signal });
+
+        try {
+          const responseText = response.choices[0].message.content;
+          const jsonText = responseText.replace(/```json|```/g, '').trim();
+          const improvedCode = JSON.parse(jsonText);
+          
+          console.log('=== IMPROVED CODE (OpenAI) ===');
+          console.log(JSON.stringify(improvedCode, null, 2));
+          console.log('==============================');
+          
+          return { success: true, data: improvedCode };
+        } catch (error) {
+          console.error("Error parsing OpenAI improved code response:", error);
+          return {
+            success: false,
+            error: "Failed to parse improved code response."
+          };
+        }
+      } else {
+        // Use Gemini API
+        if (!this.geminiApiKey) {
+          return {
+            success: false,
+            error: "Gemini API key not configured. Please check your settings."
+          };
+        }
+
+        const geminiMessages = [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `You are an expert ${language} developer. Your task is to analyze the provided code and improve it by:
+
+1. Completing any unfinished code sections
+2. Fixing potential bugs or issues
+3. Improving code quality and best practices
+4. Adding proper error handling where needed
+5. Optimizing performance if applicable
+
+Return your response as a JSON object with the following structure:
+{
+  "type": "code",
+  "language": "${language}",
+  "explanation": "Clear explanation of what was improved and why",
+  "issues": ["List of issues found and fixed"],
+  "completed_code": "The complete, improved version of the code"
+}
+
+Focus on making the code production-ready and following best practices for ${language}.
+
+Please analyze and improve the following ${language} code:
+
+**Original Code:**
+\`\`\`${language}
+${problemInfo.completed_code}
+\`\`\`
+
+**Current Analysis:**
+${problemInfo.explanation}
+
+**Language:** ${language}
+
+Please provide a complete, improved version of this code that addresses any issues and follows best practices.`
+              }
+            ]
+          }
+        ];
+
+        const response = await axios.default.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+          {
+            contents: geminiMessages,
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 4000
+            }
+          },
+          { signal }
+        );
+
+        const responseData = response.data;
+        
+        if (!responseData.candidates || responseData.candidates.length === 0) {
+          throw new Error("Empty response from Gemini API");
+        }
+        
+        const responseText = responseData.candidates[0].content.parts[0].text;
+        const jsonText = responseText.replace(/```json|```/g, '').trim();
+        const improvedCode = JSON.parse(jsonText);
+        
+        console.log('=== IMPROVED CODE (Gemini) ===');
+        console.log(JSON.stringify(improvedCode, null, 2));
+        console.log('==============================');
+        
+        return { success: true, data: improvedCode };
+      }
+    } catch (error: any) {
+      console.error("Error generating improved code:", error);
+      
+      if (axios.isCancel(error)) {
+        return {
+          success: false,
+          error: "Code improvement was canceled by the user."
+        };
+      }
+      
+      return {
+        success: false,
+        error: "Failed to generate improved code. Please try again."
+      };
     }
   }
 }

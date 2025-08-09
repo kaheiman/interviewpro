@@ -28,3 +28,11 @@ export interface ProblemStatementData {
   validation_type: string
   difficulty: string
 }
+
+export interface CodeAnalysisData {
+  type: "code"
+  language: string
+  explanation: string
+  issues: string[]
+  completed_code: string
+}

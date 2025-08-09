@@ -142,6 +142,16 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
           queryClient.setQueryData(["problem_statement"], data)
         }
       }),
+      window.electronAPI.onCodeAnalyzed((data: any) => {
+        // Always store code analysis data in cache, regardless of current view
+        queryClient.setQueryData(["code_analysis"], data)
+        
+        if (view === "queue") {
+          // Switch to solutions view to display the analysis
+          setView("solutions")
+        }
+        // If already on solutions view, the Solutions component will handle the update
+      }),
       window.electronAPI.onSolutionError((error: string) => {
         showToast("Error", error, "error")
       })

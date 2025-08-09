@@ -19,7 +19,10 @@ export const PROCESSING_EVENTS = {
   //states for processing the debugging
   DEBUG_START: "debug-start",
   DEBUG_SUCCESS: "debug-success",
-  DEBUG_ERROR: "debug-error"
+  DEBUG_ERROR: "debug-error",
+  
+  //states for code analysis
+  CODE_ANALYZED: "code-analyzed"
 } as const
 
 // At the top of the file
@@ -135,6 +138,16 @@ const electronAPI = {
     return () => {
       ipcRenderer.removeListener(
         PROCESSING_EVENTS.SOLUTION_SUCCESS,
+        subscription
+      )
+    }
+  },
+  onCodeAnalyzed: (callback: (data: any) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on(PROCESSING_EVENTS.CODE_ANALYZED, subscription)
+    return () => {
+      ipcRenderer.removeListener(
+        PROCESSING_EVENTS.CODE_ANALYZED,
         subscription
       )
     }
